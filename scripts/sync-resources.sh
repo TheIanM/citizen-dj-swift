@@ -23,8 +23,23 @@ cp "$SRC_AUDIO"/Roland_Tr-808_full__*.mp3 "$DEST_AUDIO"/
 # Drum-machine + pattern manifests (full JSON; engine filters to the t808 machine at runtime).
 cp "$SRC_DATA/drum_machines.json" "$SRC_DATA/drum_patterns.json" "$DEST_DATA"/
 
+# Phrase loop sets — longer melodic loops layered over the drums. Copied recursively;
+# .DS_Store stripped. The dir + a .keep are always created so the package builds even with
+# no phrases present (the feature then degrades to drums-only).
+DEST_PHRASES="$DEST/phrases"
+SRC_PHRASES="$REPO_ROOT/audio/phrases"
+rm -rf "$DEST_PHRASES"
+mkdir -p "$DEST_PHRASES"
+if [ -d "$SRC_PHRASES" ]; then
+  cp -R "$SRC_PHRASES"/. "$DEST_PHRASES"/
+  find "$DEST_PHRASES" -name '.DS_Store' -delete
+fi
+touch "$DEST_PHRASES/.keep"
+
 AUDIO_COUNT=$(ls "$DEST_AUDIO" | wc -l | tr -d ' ')
 DATA_COUNT=$(ls "$DEST_DATA" | wc -l | tr -d ' ')
+PHRASE_COUNT=$(find "$DEST_PHRASES" -type f ! -name '.keep' 2>/dev/null | wc -l | tr -d ' ')
 echo "Synced CitizenDJ resources:"
-echo "  $AUDIO_COUNT TR-808 mp3s  -> Sources/CitizenDJ/Resources/audio/"
-echo "  $DATA_COUNT json files   -> Sources/CitizenDJ/Resources/data/"
+echo "  $AUDIO_COUNT TR-808 mp3s   -> Sources/CitizenDJ/Resources/audio/"
+echo "  $DATA_COUNT json files    -> Sources/CitizenDJ/Resources/data/"
+echo "  $PHRASE_COUNT phrase loops -> Sources/CitizenDJ/Resources/phrases/"

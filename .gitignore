@@ -21,3 +21,11 @@ samplepacks/*
 # Swift Package Manager (citizen-dj-swift engine)
 .build/
 .swiftpm/
+
+# Bulk sample packs — large dev/test audio, synced into Resources/ by
+# scripts/sync-resources.sh. Not committed (keeps history lean); the package ships the
+# 808 baseline and degrades to drums-only / skips phrase tests when these are absent.
+audio/phrases/
+audio/drumkits/
+Sources/CitizenDJ/Resources/phrases/*
+!Sources/CitizenDJ/Resources/phrases/.keep

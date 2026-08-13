@@ -11,6 +11,15 @@ public struct EngineConfig {
     public var swingAmount: Double = 0.5
     /// Per-hit timing humanize on/off (see `TimingModel`).
     public var humanize: Bool = true
+    /// When set, render every bar at this tempo instead of each pattern's own BPM. Patterns
+    /// still rotate for content variety, and rotation stays within `bpmTolerance` of this
+    /// tempo. nil = use each pattern's native BPM (tempo drifts as patterns rotate).
+    public var bpmOverride: Double? = nil
+    /// Phrase set to layer over the drums (a directory name under phrases/, e.g. "Bounce-loop").
+    /// nil = drums only. When set, the drum tempo locks to the set's BPM so loops stay in sync.
+    public var phraseDirectory: String? = nil
+    /// How many loops from the set to layer simultaneously.
+    public var phraseLoopCount: Int = 1
 
     public init() {}
 }
@@ -26,6 +35,8 @@ public final class CitizenDJEngine<RNG: RandomNumberGenerator> {
     public let bank: SampleBank
     public let patterns: [DrumPattern]
     public let patternKey: [String: String]
+    /// The loaded phrase loop set, if `config.phraseDirectory` was set; otherwise nil.
+    public let phraseBank: PhraseBank?
 
     public var config: EngineConfig
     public private(set) var currentPattern: DrumPattern
@@ -60,11 +71,24 @@ public final class CitizenDJEngine<RNG: RandomNumberGenerator> {
             throw CitizenDJEngineError.machineNotFound("t808")
         }
 
+        // Optional phrase layer: load ONE directory's loops (harmonic isolation), and if the
+        // set declares a tempo, lock the drum tempo to it so loops and drums stay in sync.
+        var cfg = config
+        let phraseBank: PhraseBank?
+        if let dir = cfg.phraseDirectory {
+            let pb = try PhraseBank(directoryName: dir, bundle: b)
+            if cfg.bpmOverride == nil, let bpm = pb.bpm { cfg.bpmOverride = bpm }
+            phraseBank = pb
+        } else {
+            phraseBank = nil
+        }
+
         self.machine = machine
         self.bank = try SampleBank(machine: machine, bundle: b)
         self.patterns = patternLibrary.patterns
         self.patternKey = patternLibrary.patternKey
-        self.config = config
+        self.config = cfg
+        self.phraseBank = phraseBank
 
         var r = rng
         if let idx = startPatternIndex {
@@ -79,7 +103,9 @@ public final class CitizenDJEngine<RNG: RandomNumberGenerator> {
     /// the current pattern), widening the tolerance if the pool is empty. Always changes the
     /// pattern id when more than one exists.
     public func pickNextPattern() -> DrumPattern {
-        let target = Double(currentPattern.bpm)
+        // Anchor rotation to the override tempo when set, so chosen patterns groove naturally
+        // at the locked tempo; otherwise drift relative to the current pattern's BPM.
+        let target = config.bpmOverride ?? Double(currentPattern.bpm)
         var tolerance = config.bpmTolerance
         var candidates = patterns.filter {
             abs(Double($0.bpm) - target) <= tolerance && $0.id != currentPattern.id
@@ -110,7 +136,9 @@ public final class CitizenDJEngine<RNG: RandomNumberGenerator> {
             playedPatternIds.append(currentPattern.id)
             playedPatternBpms.append(currentPattern.bpm)
 
-            let bpm = Double(currentPattern.bpm)
+            // Locked tempo overrides each pattern's native BPM; the step content still comes
+            // from the (rotating) pattern, so variety is preserved at a steady tempo.
+            let bpm = config.bpmOverride ?? Double(currentPattern.bpm)
             let tracks = currentPattern.expanded(machine: machine)
             let hits = TimingModel.schedule(
                 tracks: tracks, bpm: bpm,
@@ -127,7 +155,17 @@ public final class CitizenDJEngine<RNG: RandomNumberGenerator> {
 
     /// Render `barCount` bars straight to an audio buffer (convenience over `OfflineRenderer`).
     public func render(bars barCount: Int) throws -> AVAudioPCMBuffer {
-        try OfflineRenderer.render(hits: schedule(bars: barCount), bank: bank)
+        let hits = schedule(bars: barCount)
+
+        // Layer N loops from the active phrase set (random selection → variety run to run).
+        let loopBuffers: [AVAudioPCMBuffer]
+        if let pb = phraseBank, !pb.loops.isEmpty {
+            let count = max(1, min(config.phraseLoopCount, pb.loops.count))
+            loopBuffers = pb.loops.shuffled(using: &rng).prefix(count).map(\.buffer)
+        } else {
+            loopBuffers = []
+        }
+        return try OfflineRenderer.render(hits: hits, bank: bank, loopBuffers: loopBuffers)
     }
 }
 

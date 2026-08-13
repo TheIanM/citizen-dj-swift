@@ -66,6 +66,44 @@ final class CitizenDJEngineTests: XCTestCase {
         XCTAssertTrue(containsAudio(buffer))
     }
 
+    /// A BPM override fixes the tempo (steps spaced at the override's 16th-note grid), while
+    /// patterns still rotate for content variety.
+    func testBPMOverrideFixesTempo() throws {
+        var config = EngineConfig()
+        config.bpmOverride = 100
+        config.humanize = false
+        let engine = try CitizenDJEngine(rng: SeededRNG(seed: 1), config: config, startPatternIndex: 0)
+        let hits = engine.schedule(bars: 1)
+
+        let stepDur = TimingModel.stepInterval(bpm: 100)
+        let swing = TimingModel.swingOffset(swingAmount: 0.5, feelBase: TimingModel.feelBase(bpm: 100))
+
+        // 2kfA1 kick hits steps 0 and 3; with override=100 these must use the 100-bpm grid, not 117.
+        let firstKick = try XCTUnwrap(hits.first { $0.code == "k" })
+        XCTAssertEqual(firstKick.time, 0.0, accuracy: 1e-9)
+        let kick3 = try XCTUnwrap(hits.first { $0.code == "k" && $0.step == 3 })
+        XCTAssertEqual(kick3.time, 3 * stepDur + swing, accuracy: 1e-9)
+    }
+
+    /// With a phrase directory configured, the engine locks tempo to the set's BPM and layers
+    /// its loops under the drums.
+    func testPhraseLayerLocksTempoAndRenders() throws {
+        try XCTSkipUnless(PhraseBank.availableSetNames().contains("Bounce-loop"), "phrase sets not bundled")
+
+        var config = EngineConfig()
+        config.phraseDirectory = "Bounce-loop"
+        let engine = try CitizenDJEngine(rng: SeededRNG(seed: 1), config: config, startPatternIndex: 0)
+
+        XCTAssertEqual(engine.config.bpmOverride, 128, "tempo should lock to the phrase set's BPM")
+        XCTAssertNotNil(engine.phraseBank)
+
+        let buffer = try engine.render(bars: 8)
+        XCTAssertTrue(containsAudio(buffer))
+        // 8 bars at 128 bpm ≈ 15s, so the buffer should be on the order of 15s.
+        let secs = Double(buffer.frameLength) / buffer.format.sampleRate
+        XCTAssertGreaterThan(secs, 14.0)
+    }
+
     // MARK: helpers
 
     private func containsAudio(_ buf: AVAudioPCMBuffer) -> Bool {
