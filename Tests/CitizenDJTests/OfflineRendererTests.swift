@@ -12,7 +12,7 @@ final class OfflineRendererTests: XCTestCase {
         let hits = TimingModel.schedule(tracks: tracks, bpm: 117, humanize: false, rng: &rng)
 
         let oneBar = TimingModel.barDuration(bpm: 117)
-        let buf = try OfflineRenderer.render(hits: hits, bank: bank, durationSeconds: oneBar)
+        let buf = try OfflineRenderer.render(hits: hits, source: bank, durationSeconds: oneBar)
 
         XCTAssertEqual(Int(buf.frameLength), Int(ceil(oneBar * bank.commonFormat.sampleRate)))
         XCTAssertTrue(containsAudio(buf), "rendered buffer should be non-silent")
@@ -24,7 +24,7 @@ final class OfflineRendererTests: XCTestCase {
         let sampleRate = bank.commonFormat.sampleRate
         let hitTime = 0.1
         let buf = try OfflineRenderer.render(hits: [DrumHit(code: "k", step: 0, time: hitTime)],
-                                             bank: bank, durationSeconds: 1.0)
+                                             source: bank, durationSeconds: 1.0)
 
         let start = Int(hitTime * sampleRate)
         let kick = try XCTUnwrap(bank.buffer(for: "k"))
@@ -44,7 +44,7 @@ final class OfflineRendererTests: XCTestCase {
         let tracks = try Self.loadPattern(id: "2kfA1").expanded(machine: try Self.load808())
         var rng = SeededRNG(seed: 1)
         let hits = TimingModel.schedule(tracks: tracks, bpm: 117, humanize: false, rng: &rng)
-        let buf = try OfflineRenderer.render(hits: hits, bank: bank, durationSeconds: 2.0)
+        let buf = try OfflineRenderer.render(hits: hits, source: bank, durationSeconds: 2.0)
 
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("citizendj_test_\(UUID().uuidString).wav")

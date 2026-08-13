@@ -36,10 +36,23 @@ if [ -d "$SRC_PHRASES" ]; then
 fi
 touch "$DEST_PHRASES/.keep"
 
+# Drum kits — custom percussion packs, one directory per kit. Recursive; .DS_Store stripped.
+DEST_KITS="$DEST/drumkits"
+SRC_KITS="$REPO_ROOT/audio/drumkits"
+rm -rf "$DEST_KITS"
+mkdir -p "$DEST_KITS"
+if [ -d "$SRC_KITS" ]; then
+  cp -R "$SRC_KITS"/. "$DEST_KITS"/
+  find "$DEST_KITS" -name '.DS_Store' -delete
+fi
+touch "$DEST_KITS/.keep"
+
 AUDIO_COUNT=$(ls "$DEST_AUDIO" | wc -l | tr -d ' ')
 DATA_COUNT=$(ls "$DEST_DATA" | wc -l | tr -d ' ')
 PHRASE_COUNT=$(find "$DEST_PHRASES" -type f ! -name '.keep' 2>/dev/null | wc -l | tr -d ' ')
+KIT_COUNT=$(find "$DEST_KITS" -type f ! -name '.keep' 2>/dev/null | wc -l | tr -d ' ')
 echo "Synced CitizenDJ resources:"
 echo "  $AUDIO_COUNT TR-808 mp3s   -> Sources/CitizenDJ/Resources/audio/"
 echo "  $DATA_COUNT json files    -> Sources/CitizenDJ/Resources/data/"
 echo "  $PHRASE_COUNT phrase loops -> Sources/CitizenDJ/Resources/phrases/"
+echo "  $KIT_COUNT kit samples     -> Sources/CitizenDJ/Resources/drumkits/"

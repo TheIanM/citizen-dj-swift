@@ -29,3 +29,5 @@ audio/phrases/
 audio/drumkits/
 Sources/CitizenDJ/Resources/phrases/*
 !Sources/CitizenDJ/Resources/phrases/.keep
+Sources/CitizenDJ/Resources/drumkits/*
+!Sources/CitizenDJ/Resources/drumkits/.keep

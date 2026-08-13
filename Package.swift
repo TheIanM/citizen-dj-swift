@@ -26,7 +26,8 @@ let package = Package(
             resources: [
                 .copy("Resources/audio"),
                 .copy("Resources/data"),
-                .copy("Resources/phrases")
+                .copy("Resources/phrases"),
+                .copy("Resources/drumkits")
             ]
         ),
         .testTarget(name: "CitizenDJTests", dependencies: ["CitizenDJ"]),

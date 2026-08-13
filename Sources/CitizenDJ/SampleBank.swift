@@ -3,7 +3,7 @@ import AVFoundation
 /// Holds decoded one-shot audio buffers for a single drum machine's instruments, keyed by
 /// instrument code. Built once for the active machine (the TR-808 in the MVP) and reused by
 /// the sequencer so every hit triggers from memory (no disk reads on the audio path).
-public final class SampleBank {
+public final class SampleBank: SampleSource {
 
     public let machine: DrumMachine
     private let buffers: [String: AVAudioPCMBuffer]

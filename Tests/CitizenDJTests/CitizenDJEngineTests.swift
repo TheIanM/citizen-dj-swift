@@ -8,7 +8,7 @@ final class CitizenDJEngineTests: XCTestCase {
     func testEngineLoadsAllData() throws {
         let engine = try CitizenDJEngine(rng: SeededRNG(seed: 1), startPatternIndex: 0)
         XCTAssertEqual(engine.patterns.count, 224)
-        XCTAssertEqual(engine.bank.loadedCodes.count, 27)
+        XCTAssertEqual(engine.source.loadedCodes.count, 27)
         XCTAssertFalse(engine.patternKey.isEmpty)
         XCTAssertEqual(engine.currentPattern.id, "2kfA1")  // startPatternIndex 0
     }
@@ -102,6 +102,36 @@ final class CitizenDJEngineTests: XCTestCase {
         // 8 bars at 128 bpm ≈ 15s, so the buffer should be on the order of 15s.
         let secs = Double(buffer.frameLength) / buffer.format.sampleRate
         XCTAssertGreaterThan(secs, 14.0)
+    }
+
+    /// A custom drum kit (UFO) becomes the percussion source; core codes get served and the
+    /// kit's served machine filters pattern expansion (drums come only from that kit directory).
+    func testCustomKitServesCoreCodesAndRenders() throws {
+        try XCTSkipUnless(DrumKit.availableKitNames().contains("UFO"), "drum kits not bundled")
+        var config = EngineConfig()
+        config.drumKitDirectory = "UFO"
+        let engine = try CitizenDJEngine(rng: SeededRNG(seed: 1), config: config, startPatternIndex: 0)
+
+        XCTAssertTrue(engine.source is DrumKit)
+        // UFO has Kick/Snare/Hat/Perc/808 — those core codes should be served.
+        XCTAssertTrue(engine.source.loadedCodes.contains("k"), "kick code should be served by UFO")
+        let buffer = try engine.render(bars: 4)
+        XCTAssertTrue(containsAudio(buffer))
+    }
+
+    /// Phrase loops rotate across blocks (variety over time), recorded in playedLoopBlocks.
+    func testPhraseLoopsRotateAcrossBlocks() throws {
+        try XCTSkipUnless(PhraseBank.availableSetNames().contains("Bounce-loop"), "phrase sets not bundled")
+        var config = EngineConfig()
+        config.phraseDirectory = "Bounce-loop"
+        config.phraseLoopCount = 1
+        config.phraseRotationBars = 4
+        let engine = try CitizenDJEngine(rng: SeededRNG(seed: 7), config: config, startPatternIndex: 0)
+
+        _ = try engine.render(bars: 16)
+        XCTAssertEqual(engine.playedLoopBlocks.count, 4, "16 bars / 4-bar blocks = 4 rotation blocks")
+        let names = Set(engine.playedLoopBlocks.flatMap { $0 })
+        XCTAssertGreaterThan(names.count, 1, "loops should rotate to more than one choice")
     }
 
     // MARK: helpers

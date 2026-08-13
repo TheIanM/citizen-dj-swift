@@ -1,31 +1,41 @@
 import AVFoundation
 
+/// A phrase loop placed in a render: its buffer tiled within
+/// `[startSeconds, startSeconds + durationSeconds)`. Letting the engine emit multiple
+/// placements (one per rotated block) is what gives the phrase layer variety over time.
+public struct LoopPlacement {
+    public let buffer: AVAudioPCMBuffer
+    public let startSeconds: Double
+    public let durationSeconds: Double
+
+    public init(buffer: AVAudioPCMBuffer, startSeconds: Double, durationSeconds: Double) {
+        self.buffer = buffer
+        self.startSeconds = startSeconds
+        self.durationSeconds = durationSeconds
+    }
+}
+
 /// Renders drum hits (and optionally layered phrase loops) to an audio buffer.
 ///
-/// Drum one-shots are mixed at their scheduled times; phrase loops are tiled end-to-end
-/// (they're bar-aligned at the set's BPM). Deterministic and device-free, this is both the
-/// engine's test oracle and the demo's bounce-to-file — the Swift analogue of the JS app's
-/// `Tone.Offline` / `Sequencer.downloadCurrentPattern`.
+/// Drum one-shots are mixed at their scheduled times; phrase loops are tiled within their
+/// placement windows. Deterministic and device-free — both the engine's test oracle and the
+/// demo's bounce-to-file (the Swift analogue of the JS app's `Tone.Offline`).
 public enum OfflineRenderer {
 
-    /// Mix `hits` from `bank`, optionally layering `loopBuffers` (each tiled every loop length),
-    /// into a single buffer using `bank`'s format.
-    ///
-    /// - Parameter durationSeconds: output length; if nil, derived from the last hit + the
-    ///   longest drum sample's tail so nothing clips.
     public static func render(
         hits: [DrumHit],
-        bank: SampleBank,
-        loopBuffers: [AVAudioPCMBuffer] = [],
+        source: SampleSource,
+        loops: [LoopPlacement] = [],
         durationSeconds: Double? = nil
     ) throws -> AVAudioPCMBuffer {
-        let format = bank.commonFormat
+        let format = source.commonFormat
         let sampleRate = format.sampleRate
         let channelCount = Int(format.channelCount)
 
-        let longestTailFrames = bank.loadedCodes.compactMap { bank.buffer(for: $0)?.frameLength }.max() ?? 0
+        let longestTailFrames = source.loadedCodes.compactMap { source.buffer(for: $0)?.frameLength }.max() ?? 0
         let lastHitEnd = hits.map { $0.time }.max() ?? 0
-        let totalSeconds = durationSeconds ?? (lastHitEnd + Double(longestTailFrames) / sampleRate)
+        let lastLoopEnd = loops.map { $0.startSeconds + $0.durationSeconds }.max() ?? 0
+        let totalSeconds = durationSeconds ?? (max(lastHitEnd, lastLoopEnd) + Double(longestTailFrames) / sampleRate)
         let totalFrames = max(1, Int(ceil(totalSeconds * sampleRate)))
 
         guard let out = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(totalFrames)) else {
@@ -38,18 +48,18 @@ public enum OfflineRenderer {
 
         // Drum one-shots.
         for hit in hits {
-            if let src = bank.buffer(for: hit.code) {
+            if let src = source.buffer(for: hit.code) {
                 place(src, atSeconds: hit.time, into: out, sampleRate: sampleRate, totalFrames: totalFrames)
             }
         }
-
-        // Layered phrase loops, tiled end-to-end.
-        for loop in loopBuffers {
-            let conv = converted(loop, to: format)   // resample e.g. 44.1k loop → 48k output
+        // Layered phrase loops, tiled within each placement's window.
+        for placement in loops {
+            let conv = AudioConvert.resample(placement.buffer, to: format)
             let period = Double(conv.frameLength) / sampleRate
             guard period > 0 else { continue }
-            var t = 0.0
-            while t < totalSeconds {
+            var t = placement.startSeconds
+            let end = placement.startSeconds + placement.durationSeconds
+            while t < end {
                 place(conv, atSeconds: t, into: out, sampleRate: sampleRate, totalFrames: totalFrames)
                 t += period
             }
@@ -94,29 +104,6 @@ public enum OfflineRenderer {
                 dp[f] += sp[f - startFrame]
             }
         }
-    }
-
-    /// Resample `input` to `format` so a differently-rated source (e.g. a 44.1k loop into a
-    /// 48k drum output) mixes at the correct speed/pitch. Returns the input unchanged when the
-    /// sample rate and channel count already match.
-    private static func converted(_ input: AVAudioPCMBuffer, to format: AVAudioFormat) -> AVAudioPCMBuffer {
-        if input.format.sampleRate == format.sampleRate && input.format.channelCount == format.channelCount {
-            return input
-        }
-        guard let converter = AVAudioConverter(from: input.format, to: format) else { return input }
-        let ratio = format.sampleRate / input.format.sampleRate
-        let capacity = AVAudioFrameCount((Double(input.frameLength) * ratio).rounded(.up)) + 32
-        guard let out = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else { return input }
-
-        var fed = false
-        let inputBlock: AVAudioConverterInputBlock = { _, status in
-            if fed { status.pointee = .endOfStream; return nil }
-            fed = true
-            status.pointee = .haveData
-            return input
-        }
-        converter.convert(to: out, error: nil, withInputFrom: inputBlock)
-        return out
     }
 }
 
