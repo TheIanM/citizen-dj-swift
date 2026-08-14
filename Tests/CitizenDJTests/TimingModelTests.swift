@@ -52,6 +52,13 @@ final class TimingModelTests: XCTestCase {
         XCTAssertEqual(a, b, "same seed must yield the same schedule")
     }
 
+    /// The library's SeededRNG contract: same seed ⇒ same sequence (what `--seed` relies on).
+    func testSeededRNGIsDeterministic() {
+        var a = SeededRNG(seed: 99)
+        var b = SeededRNG(seed: 99)
+        for _ in 0..<8 { XCTAssertEqual(a.next(), b.next()) }
+    }
+
     /// End-to-end timing check on a real pattern via a synthetic omnibus machine (no kit needed).
     func testKnownPattern2kfA1KickTimes() throws {
         let url = try XCTUnwrap(Bundle.module.url(forResource: "drum_patterns", withExtension: "json", subdirectory: "data"))
@@ -75,12 +82,4 @@ final class TimingModelTests: XCTestCase {
     }
 }
 
-/// Minimal deterministic RNG (LCG) so humanized schedules are reproducible in tests.
-struct SeededRNG: RandomNumberGenerator {
-    var state: UInt64
-    init(seed: UInt64) { state = (seed == 0) ? 1 : seed }
-    mutating func next() -> UInt64 {
-        state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
-        return state
-    }
-}
+// (SeededRNG now lives in the library as a public type — see Sources/CitizenDJ/SeededRNG.swift.)

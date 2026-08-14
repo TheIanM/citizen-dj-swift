@@ -98,6 +98,35 @@ final class CitizenDJEngineTests: XCTestCase {
         XCTAssertGreaterThan(Set(engine.playedLoopBlocks.flatMap { $0 }).count, 1, "loops should rotate")
     }
 
+    /// Same seed + same kit ⇒ identical generation decisions (the basis for `--seed`).
+    func testSameSeedSameKitReproducesGeneration() throws {
+        try XCTSkipUnless(PhraseBank.availableSetNames().contains("Bounce-loop"), "Bounce-loop not bundled")
+        var c = config(); c.phraseDirectory = "Bounce-loop"
+        let e1 = try CitizenDJEngine(rng: SeededRNG(seed: 1234), config: c)
+        let e2 = try CitizenDJEngine(rng: SeededRNG(seed: 1234), config: c)
+        _ = try e1.render(bars: 8)
+        _ = try e2.render(bars: 8)
+        XCTAssertEqual(e1.playedPatternIds, e2.playedPatternIds)
+        XCTAssertEqual(e1.playedLoopBlocks, e2.playedLoopBlocks)
+    }
+
+    /// Same seed across DIFFERENT kits ⇒ same pattern sequence, because DrumKit consumes
+    /// exactly one RNG draw per requested code whether or not it serves it. Humanize must be
+    /// off here: its jitter draws scale with hit count, which varies by kit.
+    func testSameSeedAlignsAcrossKits() throws {
+        try XCTSkipUnless(DrumKit.availableKitNames().contains("UFO")
+                          && DrumKit.availableKitNames().contains("ultimate-pop"),
+                          "UFO + ultimate-pop must be bundled")
+        var c1 = config(kit: "UFO");           c1.bpmOverride = 120; c1.humanize = false
+        var c2 = config(kit: "ultimate-pop");  c2.bpmOverride = 120; c2.humanize = false
+        let e1 = try CitizenDJEngine(rng: SeededRNG(seed: 77), config: c1)
+        let e2 = try CitizenDJEngine(rng: SeededRNG(seed: 77), config: c2)
+        _ = e1.schedule(bars: 8)
+        _ = e2.schedule(bars: 8)
+        XCTAssertEqual(e1.playedPatternIds, e2.playedPatternIds,
+                       "same seed should yield the same pattern sequence across kits")
+    }
+
     // MARK: helpers
 
     private func containsAudio(_ buf: AVAudioPCMBuffer) -> Bool {

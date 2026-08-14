@@ -38,7 +38,12 @@ public final class DrumKit: SampleSource {
         var instruments: [DrumInstrument] = []
         for code in codes {
             let candidates = Self.categories(forCode: code)
-            guard let chosen = candidates.lazy.compactMap({ byCategory[$0] }).first?.randomElement(using: &rng) else {
+            let pool = candidates.lazy.compactMap { byCategory[$0] }.first
+            // Consume exactly one RNG draw per requested code, served or not. Kits that serve
+            // different codes then advance the sequence identically, keeping seeds comparable
+            // across kits (same seed ⇒ same pattern/loop choices, different voicing).
+            guard let chosen = pool?.randomElement(using: &rng) else {
+                _ = rng.next()
                 continue  // kit has no sample for this code → it's simply not served
             }
             guard let file = try? AVAudioFile(forReading: chosen) else { continue }

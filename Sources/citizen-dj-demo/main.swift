@@ -2,13 +2,13 @@ import Foundation
 import CitizenDJ
 
 // Usage:
-//   citizen-dj-demo [--bars N] [--bpm N] [--kit <name>] [--phrase-dir <set>] [--loops N] [--phrase-rotate <bars>] [--out PATH]
-//   citizen-dj-demo --list-kits
-//   citizen-dj-demo --list-sets
+//   citizen-dj-demo [--bars N] [--bpm N] [--kit <name>] [--phrase-dir <set>] [--loops N]
+//                   [--phrase-rotate <bars>] [--rotate <bars>] [--swing X] [--no-humanize]
+//                   [--seed N] [--out PATH]
+//   citizen-dj-demo --list-kits | --list-sets
 //
-// A drum kit is required. If --kit is omitted, the first bundled kit is used. Default: 16 bars,
-// tempo drifts via rotation unless --bpm / --phrase-dir lock it, output ./citizen-dj-loop.wav.
-// Fresh random seed each run → a different loop every time.
+// A drum kit is required (defaults to the first bundled kit). Every run rolls a random seed
+// and PRINTS it — pass it back via --seed to reproduce that exact render.
 
 let args = Array(CommandLine.arguments.dropFirst())
 
@@ -24,6 +24,7 @@ if args.contains("--list-sets") {
 var bars = 16
 var config = EngineConfig()
 var outPath = "citizen-dj-loop.wav"
+var seed: UInt64?
 
 var idx = 0
 while idx < args.count {
@@ -34,6 +35,10 @@ while idx < args.count {
     case "--phrase-dir":     idx += 1; if idx < args.count { config.phraseDirectory = args[idx] }
     case "--loops":          idx += 1; if idx < args.count { config.phraseLoopCount = Int(args[idx]) ?? 1 }
     case "--phrase-rotate":  idx += 1; if idx < args.count { config.phraseRotationBars = Int(args[idx]) ?? 4 }
+    case "--rotate":         idx += 1; if idx < args.count { config.barsPerRotation = Int(args[idx]) ?? 4 }
+    case "--swing":          idx += 1; if idx < args.count { config.swingAmount = Double(args[idx]) ?? config.swingAmount }
+    case "--no-humanize":    config.humanize = false
+    case "--seed":           idx += 1; if idx < args.count { seed = UInt64(args[idx]) }
     case "--out":            idx += 1; if idx < args.count { outPath = args[idx] }
     default: break
     }
@@ -50,13 +55,21 @@ if config.drumKitDirectory == nil {
     config.drumKitDirectory = first
 }
 
-let engine = try CitizenDJEngine(config: config)
+// Roll (or take) the seed, then generate deterministically from it. Printing the seed every
+// run means any render can be reproduced after the fact.
+let effectiveSeed = seed ?? UInt64.random(in: .min ... .max)
+let engine = try CitizenDJEngine(rng: SeededRNG(seed: effectiveSeed), config: config)
 let buffer = try engine.render(bars: bars)
 let url = URL(fileURLWithPath: outPath)
 try OfflineRenderer.writeWav(buffer, to: url)
 
 let seconds = Double(buffer.frameLength) / buffer.format.sampleRate
 print("Rendered \(bars) bars (\(String(format: "%.1f", seconds))s) → \(url.path)")
+if seed == nil {
+    print("Seed: \(effectiveSeed) (random — re-run with --seed \(effectiveSeed) to reproduce)")
+} else {
+    print("Seed: \(effectiveSeed) (locked)")
+}
 print("Drums: kit '\(engine.source.directoryName)'")
 if let bpm = engine.config.bpmOverride {
     print("Tempo: \(String(format: "%.0f", bpm)) bpm (locked)")

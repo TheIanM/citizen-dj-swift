@@ -69,8 +69,10 @@ public final class CitizenDJEngine<RNG: RandomNumberGenerator> {
         guard let kitDir = cfg.drumKitDirectory else {
             throw CitizenDJEngineError.noDrumKitConfigured
         }
+        // Codes sorted ⇒ deterministic order across launches (Dictionary key order is
+        // per-process random), so a given seed always reproduces the same kit voicing.
         let kit = try DrumKit(directoryName: kitDir,
-                              codes: Array(patternLibrary.patternKey.keys),
+                              codes: patternLibrary.patternKey.keys.sorted(),
                               bundle: b, rng: &r)
         self.source = kit
 

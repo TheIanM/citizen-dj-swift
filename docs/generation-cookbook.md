@@ -38,6 +38,10 @@ open /tmp/loop.wav
 | `--loops N` | 1 | How many loops from the set layer at once |
 | `--phrase-rotate N` | 4 | Re-pick loops every N bars |
 | `--bpm N` | see tempo rules below | Lock the tempo |
+| `--seed N` | random (printed each run) | Reproduce an exact render — the run's seed is always printed |
+| `--rotate N` | 4 | Rotate the drum pattern every N bars |
+| `--swing X` | 0.5 | Swing amount (roughly -0.5…0.5) |
+| `--no-humanize` | jitter on | Disable per-hit timing humanize |
 | `--out PATH` | `./citizen-dj-loop.wav` (in your cwd) | Output WAV |
 | `--list-kits` / `--list-sets` | — | Print what's installed and exit |
 
@@ -88,12 +92,21 @@ dj --bars 32 --kit ultimate-pop --phrase-dir SH_SFB2_KIT08_MELODY_LOOPS --loops 
 dj --bars 16 --bpm 110 --kit UFO --out /tmp/ufo110.wav
 ```
 
-**A/B two kits** (same tempo + length; note each render still randomizes internally — see
-[reproducibility](#reproducibility--knobs-not-exposed-as-flags)):
+**A/B two kits properly** — same seed ⇒ same pattern & loop choices, only the kit differs.
+Add `--no-humanize` for exact alignment: the jitter consumes one random draw per hit, and
+kits trigger different numbers of hits.
 
 ```bash
-dj --bars 16 --bpm 120 --kit UFO --out /tmp/a_ufo.wav
-dj --bars 16 --bpm 120 --kit ultimate-pop --out /tmp/a_pop.wav
+dj --bars 16 --seed 42 --bpm 120 --no-humanize --kit UFO --out /tmp/a_ufo.wav
+dj --bars 16 --seed 42 --bpm 120 --no-humanize --kit ultimate-pop --out /tmp/a_pop.wav
+```
+
+**Reproduce a render** — every run prints its seed; pass it back to get that exact render
+again (same kit & settings):
+
+```bash
+dj --bars 16 --kit UFO --phrase-dir Bounce-loop --out /tmp/loop.wav   # note the printed seed
+dj --bars 16 --seed <printed-seed> --kit UFO --phrase-dir Bounce-loop --out /tmp/again.wav
 ```
 
 **Denser / sparser melody:**
@@ -129,13 +142,13 @@ swift package clean           # if the bundled resources ever look stale or wron
 
 ## Reproducibility & knobs not exposed as flags
 
-Every run rolls a fresh random seed, so no two renders are identical — great for variety,
-annoying for A/B testing. There are also engine knobs that currently exist only in code
-(`EngineConfig`), not as CLI flags:
+Every run rolls a random seed and **prints it** — pass it back with `--seed` to reproduce
+that exact render (same kit & settings). The same seed across *different* kits gives the same
+pattern/loop choices, but byte-exact cross-kit alignment needs `--no-humanize` (the jitter
+consumes one random draw per hit, and kits trigger different numbers of hits).
 
-- swing amount (`swingAmount`) and timing humanize (`humanize`)
-- drum-pattern rotation length (`barsPerRotation`, default 4)
-- rotation BPM tolerance (`bpmTolerance`, default ±6)
+The one knob still code-only (`EngineConfig`): rotation BPM tolerance (`bpmTolerance`,
+default ±6).
 
 Two footguns to remember: unknown flags are **ignored silently** (a typo like `--phrase_dir`
 just quietly drops the melody layer), and `--out` defaults to your current working directory.
