@@ -16,15 +16,14 @@ let package = Package(
         .library(name: "CitizenDJ", targets: ["CitizenDJ"])
     ],
     targets: [
-        // Bundled resources: the Roland TR-808 one-shot samples (~27 mp3s) and the two
-        // drum-data JSONs. These are staged under Sources/CitizenDJ/Resources/ by
-        // `scripts/sync-resources.sh`. MVP scope is 808-only, so just that machine's hits
-        // are copied (not all 8 machines / 212 samples).
+        // Bundled resources, staged under Sources/CitizenDJ/Resources/ by
+        // `scripts/sync-resources.sh`: drum_patterns.json (always), plus phrase loop sets and
+        // drum kits (bulk sample packs — gitignored; the package builds without them and the
+        // engine requires a kit directory to be supplied at runtime).
         .target(
             name: "CitizenDJ",
             dependencies: [],
             resources: [
-                .copy("Resources/audio"),
                 .copy("Resources/data"),
                 .copy("Resources/phrases"),
                 .copy("Resources/drumkits")

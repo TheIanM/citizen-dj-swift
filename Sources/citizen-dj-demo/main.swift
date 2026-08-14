@@ -3,20 +3,21 @@ import CitizenDJ
 
 // Usage:
 //   citizen-dj-demo [--bars N] [--bpm N] [--kit <name>] [--phrase-dir <set>] [--loops N] [--phrase-rotate <bars>] [--out PATH]
-//   citizen-dj-demo --list-sets
 //   citizen-dj-demo --list-kits
+//   citizen-dj-demo --list-sets
 //
-// Defaults: 16 bars; 808 drums; tempo drifts via rotation unless --bpm / --phrase-dir lock it;
-// output ./citizen-dj-loop.wav. Fresh random seed each run → a different loop every time.
+// A drum kit is required. If --kit is omitted, the first bundled kit is used. Default: 16 bars,
+// tempo drifts via rotation unless --bpm / --phrase-dir lock it, output ./citizen-dj-loop.wav.
+// Fresh random seed each run → a different loop every time.
 
 let args = Array(CommandLine.arguments.dropFirst())
 
-if args.contains("--list-sets") {
-    print("Available phrase sets: \(PhraseBank.availableSetNames())")
-    exit(0)
-}
 if args.contains("--list-kits") {
     print("Available drum kits: \(DrumKit.availableKitNames())")
+    exit(0)
+}
+if args.contains("--list-sets") {
+    print("Available phrase sets: \(PhraseBank.availableSetNames())")
     exit(0)
 }
 
@@ -39,6 +40,16 @@ while idx < args.count {
     idx += 1
 }
 
+// A kit is required — default to the first bundled kit if none was specified.
+if config.drumKitDirectory == nil {
+    let kits = DrumKit.availableKitNames()
+    guard let first = kits.first else {
+        FileHandle.standardError.write("No drum kit configured and none bundled. Pass --kit <name>.\n".data(using: .utf8)!)
+        exit(1)
+    }
+    config.drumKitDirectory = first
+}
+
 let engine = try CitizenDJEngine(config: config)
 let buffer = try engine.render(bars: bars)
 let url = URL(fileURLWithPath: outPath)
@@ -46,7 +57,7 @@ try OfflineRenderer.writeWav(buffer, to: url)
 
 let seconds = Double(buffer.frameLength) / buffer.format.sampleRate
 print("Rendered \(bars) bars (\(String(format: "%.1f", seconds))s) → \(url.path)")
-print("Drums: \(config.drumKitDirectory.map { "kit '\($0)'" } ?? "808")")
+print("Drums: kit '\(engine.source.directoryName)'")
 if let bpm = engine.config.bpmOverride {
     print("Tempo: \(String(format: "%.0f", bpm)) bpm (locked)")
 } else {

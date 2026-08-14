@@ -27,6 +27,7 @@ samplepacks/*
 # 808 baseline and degrades to drums-only / skips phrase tests when these are absent.
 audio/phrases/
 audio/drumkits/
+Sources/CitizenDJ/Resources/audio/
 Sources/CitizenDJ/Resources/phrases/*
 !Sources/CitizenDJ/Resources/phrases/.keep
 Sources/CitizenDJ/Resources/drumkits/*

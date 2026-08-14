@@ -19,21 +19,21 @@ public struct EngineConfig {
     public var phraseLoopCount: Int = 1
     /// How often (in bars) to rotate the phrase loops for variety.
     public var phraseRotationBars: Int = 4
-    /// Custom drum-kit directory (under drumkits/) to source percussion from instead of the 808.
+    /// REQUIRED: drum-kit directory (under drumkits/) to source percussion from. There is no
+    /// bundled default kit — every run must name one.
     public var drumKitDirectory: String? = nil
 
     public init() {}
 }
 
 /// The conductor: picks/rotates drum patterns and layers phrase loops, so output keeps
-/// evolving. Generic over the RNG so a live run uses `SystemRandomNumberGenerator` (fresh each
-/// launch) while tests/renderings pass a seeded RNG for reproducibility.
+/// evolving. Generic over the RNG so a live run uses `SystemRandomNumberGenerator` (fresh
+/// each launch) while tests/renderings pass a seeded RNG for reproducibility.
 public final class CitizenDJEngine<RNG: RandomNumberGenerator> {
 
-    /// The bundled 808 machine (always loaded; the pattern source when no custom kit is set).
-    public let machine: DrumMachine
-    /// Where percussion samples come from — `SampleBank` for the 808, or `DrumKit` for a custom kit.
-    public let source: SampleSource
+    /// The percussion source — always a custom `DrumKit` (one directory subtree, harmonically
+    /// isolated). The engine has no built-in kit.
+    public let source: DrumKit
     public let patterns: [DrumPattern]
     public let patternKey: [String: String]
     public let phraseBank: PhraseBank?
@@ -45,8 +45,6 @@ public final class CitizenDJEngine<RNG: RandomNumberGenerator> {
     /// Phrase-loop names used per rotation block of the most recent `render(bars:)`.
     public private(set) var playedLoopBlocks: [[String]] = []
 
-    /// Machine used to expand patterns — filters steps to the codes the active source can play.
-    private let expansionMachine: DrumMachine
     private var rng: RNG
 
     public init(
@@ -57,39 +55,24 @@ public final class CitizenDJEngine<RNG: RandomNumberGenerator> {
     ) throws {
         let b = bundle ?? Bundle.module
 
-        guard let machinesURL = b.url(forResource: "drum_machines", withExtension: "json", subdirectory: "data") else {
-            throw CitizenDJEngineError.dataNotFound("drum_machines.json")
-        }
-        let library = try JSONDecoder().decode(DrumLibrary.self, from: Data(contentsOf: machinesURL))
         guard let patternsURL = b.url(forResource: "drum_patterns", withExtension: "json", subdirectory: "data") else {
             throw CitizenDJEngineError.dataNotFound("drum_patterns.json")
         }
         let patternLibrary = try JSONDecoder().decode(PatternLibrary.self, from: Data(contentsOf: patternsURL))
-        guard let machine = library.machine(id: "t808") else {
-            throw CitizenDJEngineError.machineNotFound("t808")
-        }
-        self.machine = machine
         self.patterns = patternLibrary.patterns
         self.patternKey = patternLibrary.patternKey
 
         var cfg = config
         var r = rng
 
-        // Drum source: a custom kit directory, else the 808.
-        let source: SampleSource
-        let expansionMachine: DrumMachine
-        if let kitDir = cfg.drumKitDirectory {
-            let kit = try DrumKit(directoryName: kitDir,
-                                  codes: Array(patternLibrary.patternKey.keys),
-                                  bundle: b, rng: &r)
-            source = kit
-            expansionMachine = kit.servedMachine
-        } else {
-            source = try SampleBank(machine: machine, bundle: b)
-            expansionMachine = machine
+        // Percussion always comes from a custom kit (one directory). No 808 fallback.
+        guard let kitDir = cfg.drumKitDirectory else {
+            throw CitizenDJEngineError.noDrumKitConfigured
         }
-        self.source = source
-        self.expansionMachine = expansionMachine
+        let kit = try DrumKit(directoryName: kitDir,
+                              codes: Array(patternLibrary.patternKey.keys),
+                              bundle: b, rng: &r)
+        self.source = kit
 
         // Phrase layer + tempo lock.
         let phraseBank: PhraseBank?
@@ -129,7 +112,7 @@ public final class CitizenDJEngine<RNG: RandomNumberGenerator> {
     }
 
     /// Absolute-time drum-hit schedule for `barCount` bars, rotating the pattern every
-    /// `barsPerRotation` bars on the downbeat.
+    /// `barsPerRotation` bars on the downbeat. Expansion is filtered to the codes the kit serves.
     public func schedule(bars barCount: Int) -> [DrumHit] {
         let period = max(1, config.barsPerRotation)
         playedPatternIds.removeAll()
@@ -145,7 +128,7 @@ public final class CitizenDJEngine<RNG: RandomNumberGenerator> {
             playedPatternBpms.append(currentPattern.bpm)
 
             let bpm = config.bpmOverride ?? Double(currentPattern.bpm)
-            let tracks = currentPattern.expanded(machine: expansionMachine)
+            let tracks = currentPattern.expanded(machine: source.servedMachine)
             let hits = TimingModel.schedule(
                 tracks: tracks, bpm: bpm,
                 swingAmount: config.swingAmount, humanize: config.humanize,
@@ -205,5 +188,5 @@ extension CitizenDJEngine where RNG == SystemRandomNumberGenerator {
 
 public enum CitizenDJEngineError: Error {
     case dataNotFound(String)
-    case machineNotFound(String)
+    case noDrumKitConfigured
 }
