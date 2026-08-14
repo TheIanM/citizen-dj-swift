@@ -9,7 +9,9 @@ The Citizen DJ project invites the public to make hip hop music using the Librar
 > **About this fork:** alongside the original web app, this repo carries a native Swift
 > drum-loop generator (the `CitizenDJ` Swift package + `citizen-dj-demo` CLI) that produces
 > evolving, non-repetitive beats from your own drum kits and phrase loops. To add your own
-> samples, see **[docs/adding-samples.md](docs/adding-samples.md)**.
+> samples, see **[docs/adding-samples.md](docs/adding-samples.md)**; for the commands to
+> trigger generations and experiments, see
+> **[docs/generation-cookbook.md](docs/generation-cookbook.md)**.
 
 ## Use cases
 
