@@ -38,6 +38,7 @@ open /tmp/loop.wav
 | `--loops N` | 1 | How many loops from the set layer at once |
 | `--phrase-rotate N` | 4 | Re-pick loops every N bars |
 | `--bpm N` | see tempo rules below | Lock the tempo |
+| `--bpm-tolerance X` | 6 | Rotation picks patterns within ±X BPM of the current/locked tempo (0 = exact-BPM matches only; bigger = wilder tempo jumps when drifting) |
 | `--seed N` | random (printed each run) | Reproduce an exact render — the run's seed is always printed |
 | `--rotate N` | 4 | Rotate the drum pattern every N bars |
 | `--swing X` | 0.5 | Swing amount (roughly -0.5…0.5) |
@@ -140,15 +141,14 @@ swift test                    # full suite (kit/phrase tests skip without sample
 swift package clean           # if the bundled resources ever look stale or wrong
 ```
 
-## Reproducibility & knobs not exposed as flags
+## Reproducibility & footguns
 
 Every run rolls a random seed and **prints it** — pass it back with `--seed` to reproduce
 that exact render (same kit & settings). The same seed across *different* kits gives the same
 pattern/loop choices, but byte-exact cross-kit alignment needs `--no-humanize` (the jitter
 consumes one random draw per hit, and kits trigger different numbers of hits).
 
-The one knob still code-only (`EngineConfig`): rotation BPM tolerance (`bpmTolerance`,
-default ±6).
+Every engine knob is now exposed as a CLI flag; anything else lives in `EngineConfig`.
 
 Two footguns to remember: unknown flags are **ignored silently** (a typo like `--phrase_dir`
 just quietly drops the melody layer), and `--out` defaults to your current working directory.

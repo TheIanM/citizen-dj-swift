@@ -2,9 +2,9 @@ import Foundation
 import CitizenDJ
 
 // Usage:
-//   citizen-dj-demo [--bars N] [--bpm N] [--kit <name>] [--phrase-dir <set>] [--loops N]
-//                   [--phrase-rotate <bars>] [--rotate <bars>] [--swing X] [--no-humanize]
-//                   [--seed N] [--out PATH]
+//   citizen-dj-demo [--bars N] [--bpm N] [--bpm-tolerance X] [--kit <name>] [--phrase-dir <set>]
+//                   [--loops N] [--phrase-rotate <bars>] [--rotate <bars>] [--swing X]
+//                   [--no-humanize] [--seed N] [--out PATH]
 //   citizen-dj-demo --list-kits | --list-sets
 //
 // A drum kit is required (defaults to the first bundled kit). Every run rolls a random seed
@@ -31,6 +31,7 @@ while idx < args.count {
     switch args[idx] {
     case "--bars":           idx += 1; if idx < args.count { bars = Int(args[idx]) ?? bars }
     case "--bpm":            idx += 1; if idx < args.count { config.bpmOverride = Double(args[idx]) }
+    case "--bpm-tolerance":  idx += 1; if idx < args.count { config.bpmTolerance = Double(args[idx]) ?? config.bpmTolerance }
     case "--kit":            idx += 1; if idx < args.count { config.drumKitDirectory = args[idx] }
     case "--phrase-dir":     idx += 1; if idx < args.count { config.phraseDirectory = args[idx] }
     case "--loops":          idx += 1; if idx < args.count { config.phraseLoopCount = Int(args[idx]) ?? 1 }
