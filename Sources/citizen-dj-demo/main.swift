@@ -1,14 +1,17 @@
 import Foundation
+import AVFoundation
 import CitizenDJ
 
 // Usage:
 //   citizen-dj-demo [--bars N] [--bpm N] [--bpm-tolerance X] [--kit <name>] [--phrase-dir <set>]
 //                   [--loops N] [--phrase-rotate <bars>] [--rotate <bars>] [--swing X]
 //                   [--no-humanize] [--seed N] [--out PATH]
+//                   [--live <seconds>]   (play in real time instead of bouncing a file)
 //   citizen-dj-demo --list-kits | --list-sets
 //
 // A drum kit is required (defaults to the first bundled kit). Every run rolls a random seed
-// and PRINTS it — pass it back via --seed to reproduce that exact render.
+// and PRINTS it — pass it back via --seed to reproduce that exact render. Recordings come
+// from the offline bounce (--out); --live is for listening (and mirrors the in-game path).
 
 let args = Array(CommandLine.arguments.dropFirst())
 
@@ -25,6 +28,7 @@ var bars = 16
 var config = EngineConfig()
 var outPath = "citizen-dj-loop.wav"
 var seed: UInt64?
+var liveSeconds: Double?
 
 var idx = 0
 while idx < args.count {
@@ -40,6 +44,7 @@ while idx < args.count {
     case "--swing":          idx += 1; if idx < args.count { config.swingAmount = Double(args[idx]) ?? config.swingAmount }
     case "--no-humanize":    config.humanize = false
     case "--seed":           idx += 1; if idx < args.count { seed = UInt64(args[idx]) }
+    case "--live":           idx += 1; if idx < args.count { liveSeconds = Double(args[idx]) ?? 30 }
     case "--out":            idx += 1; if idx < args.count { outPath = args[idx] }
     default: break
     }
@@ -60,6 +65,19 @@ if config.drumKitDirectory == nil {
 // run means any render can be reproduced after the fact.
 let effectiveSeed = seed ?? UInt64.random(in: .min ... .max)
 let engine = try CitizenDJEngine(rng: SeededRNG(seed: effectiveSeed), config: config)
+
+if let liveSeconds {
+    // Real-time playback through AVAudioEngine — the path a game embeds.
+    let sequencer = try DrumSequencer(engine: engine)
+    try sequencer.start()
+    print("Playing LIVE for \(String(format: "%.0f", liveSeconds))s — kit '\(engine.source.directoryName)'" +
+          (engine.phraseBank.map { ", phrase '\($0.directoryName)'" } ?? "") +
+          "… (seed \(effectiveSeed); re-render offline with --out to capture)")
+    Thread.sleep(forTimeInterval: liveSeconds)
+    sequencer.stop()
+    exit(0)
+}
+
 let buffer = try engine.render(bars: bars)
 let url = URL(fileURLWithPath: outPath)
 try OfflineRenderer.writeWav(buffer, to: url)

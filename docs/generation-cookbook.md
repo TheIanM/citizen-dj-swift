@@ -132,6 +132,22 @@ done
 open /tmp/dj_*.wav
 ```
 
+## Live playback (the in-game path)
+
+The same generator can play in REAL TIME — `AVAudioEngine` with a look-ahead scheduler —
+through your speakers instead of bouncing a file. This is the mode a game embeds
+(`DrumSequencer` in the library):
+
+```bash
+dj --live 30 --kit UFO --phrase-dir Bounce-loop --loops 2
+dj --live 15 --seed 9 --bpm 110 --kit ultimate-pop
+```
+
+`--live <seconds>` plays for that long and exits. For a recording, use the offline bounce
+(`--out`) — it's the reliable capture path; live mode is for listening. Live and offline make
+identical generation choices from the same seed (both consume the engine bar-by-bar). iOS
+note: the host app configures `AVAudioSession` — the library stays session-agnostic.
+
 ## Dev-loop commands
 
 ```bash

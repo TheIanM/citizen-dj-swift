@@ -26,6 +26,17 @@ public struct EngineConfig {
     public init() {}
 }
 
+/// One bar of generation — the unit both the offline renderer and the live `DrumSequencer`
+/// consume. `hits` and `loopPlacements` carry times relative to the bar's start.
+public struct BarPlan {
+    public let barIndex: Int
+    public let bpm: Double
+    public let barDuration: Double
+    public let hits: [DrumHit]
+    /// Loop placements that BEGIN on this bar (one per layered loop, emitted at phrase-block starts).
+    public let loopPlacements: [LoopPlacement]
+}
+
 /// The conductor: picks/rotates drum patterns and layers phrase loops, so output keeps
 /// evolving. Generic over the RNG so a live run uses `SystemRandomNumberGenerator` (fresh
 /// each launch) while tests/renderings pass a seeded RNG for reproducibility.
@@ -46,6 +57,11 @@ public final class CitizenDJEngine<RNG: RandomNumberGenerator> {
     public private(set) var playedLoopBlocks: [[String]] = []
 
     private var rng: RNG
+
+    // Run state for planNextBar() — reset by beginRun().
+    private var barIndex = 0
+    private var phraseBlockRemaining = 0
+    private var currentLoops: [PhraseLoop] = []
 
     public init(
         rng: RNG,
@@ -113,66 +129,100 @@ public final class CitizenDJEngine<RNG: RandomNumberGenerator> {
         return candidates.randomElement(using: &rng) ?? currentPattern
     }
 
+    /// Reset run bookkeeping (played ids/blocks, bar counter, phrase-block state) so a fresh
+    /// `schedule`/`render`/live run starts from bar 0. Does not reset `currentPattern` or the
+    /// RNG — generation continues the stream (runs stay deterministic given seed + config).
+    public func beginRun() {
+        barIndex = 0
+        phraseBlockRemaining = 0
+        currentLoops = []
+        playedPatternIds.removeAll()
+        playedPatternBpms.removeAll()
+        playedLoopBlocks.removeAll()
+    }
+
+    /// Advance generation by one bar (pattern rotation + rng) and return that bar's plan.
+    ///
+    /// Single source of truth for generation: `schedule(bars:)`, `render(bars:)` and the
+    /// live `DrumSequencer` all consume it, so offline bounces and live playback make
+    /// identical choices. NOT thread-safe — call from one thread/queue only.
+    public func planNextBar() -> BarPlan {
+        let period = max(1, config.barsPerRotation)
+        if barIndex > 0 && barIndex % period == 0 {
+            currentPattern = pickNextPattern()
+        }
+        playedPatternIds.append(currentPattern.id)
+        playedPatternBpms.append(currentPattern.bpm)
+
+        let bpm = config.bpmOverride ?? Double(currentPattern.bpm)
+        let tracks = currentPattern.expanded(machine: source.servedMachine)
+        let hits = TimingModel.schedule(tracks: tracks, bpm: bpm,
+                                        swingAmount: config.swingAmount,
+                                        humanize: config.humanize, rng: &rng)
+
+        // Phrase block: (re)pick loops when a block starts, and emit placements only on the
+        // block's first bar so each block is placed exactly once.
+        var placements: [LoopPlacement] = []
+        if let pb = phraseBank, !pb.loops.isEmpty {
+            var blockStarted = false
+            if phraseBlockRemaining == 0 {
+                let count = max(1, min(config.phraseLoopCount, pb.loops.count))
+                currentLoops = Array(pb.loops.shuffled(using: &rng).prefix(count))
+                playedLoopBlocks.append(currentLoops.map(\.name))
+                phraseBlockRemaining = max(1, config.phraseRotationBars)
+                blockStarted = true
+            }
+            if blockStarted {
+                let blockDuration = Double(phraseBlockRemaining) * TimingModel.barDuration(bpm: bpm)
+                placements = currentLoops.map {
+                    LoopPlacement(buffer: $0.buffer, startSeconds: 0, durationSeconds: blockDuration)
+                }
+            }
+            phraseBlockRemaining -= 1
+        }
+
+        let plan = BarPlan(barIndex: barIndex, bpm: bpm,
+                           barDuration: TimingModel.barDuration(bpm: bpm),
+                           hits: hits, loopPlacements: placements)
+        barIndex += 1
+        return plan
+    }
+
     /// Absolute-time drum-hit schedule for `barCount` bars, rotating the pattern every
     /// `barsPerRotation` bars on the downbeat. Expansion is filtered to the codes the kit serves.
     public func schedule(bars barCount: Int) -> [DrumHit] {
-        let period = max(1, config.barsPerRotation)
-        playedPatternIds.removeAll()
-        playedPatternBpms.removeAll()
-
+        beginRun()
         var all: [DrumHit] = []
         var barStart = 0.0
-        for bar in 0..<barCount {
-            if bar > 0 && bar % period == 0 {
-                currentPattern = pickNextPattern()
-            }
-            playedPatternIds.append(currentPattern.id)
-            playedPatternBpms.append(currentPattern.bpm)
-
-            let bpm = config.bpmOverride ?? Double(currentPattern.bpm)
-            let tracks = currentPattern.expanded(machine: source.servedMachine)
-            let hits = TimingModel.schedule(
-                tracks: tracks, bpm: bpm,
-                swingAmount: config.swingAmount, humanize: config.humanize,
-                rng: &rng
-            )
-            for hit in hits {
+        for _ in 0..<barCount {
+            let plan = planNextBar()
+            for hit in plan.hits {
                 all.append(DrumHit(code: hit.code, step: hit.step, time: barStart + hit.time))
             }
-            barStart += TimingModel.barDuration(bpm: bpm)
+            barStart += plan.barDuration
         }
         return all
     }
 
     /// Render `barCount` bars to an audio buffer: drums + rotated phrase loops.
     public func render(bars barCount: Int) throws -> AVAudioPCMBuffer {
-        let hits = schedule(bars: barCount)
-        let bpm = config.bpmOverride ?? Double(currentPattern.bpm)
-        let loops = buildLoopPlacements(barCount: barCount, barDuration: TimingModel.barDuration(bpm: bpm))
-        return try OfflineRenderer.render(hits: hits, source: source, loops: loops)
-    }
-
-    /// Phrase-loop placements, rotating the loop choice every `phraseRotationBars` bars.
-    private func buildLoopPlacements(barCount: Int, barDuration: Double) -> [LoopPlacement] {
-        playedLoopBlocks.removeAll()
-        guard let pb = phraseBank, !pb.loops.isEmpty else { return [] }
-        let blockBars = max(1, config.phraseRotationBars)
-        let count = max(1, min(config.phraseLoopCount, pb.loops.count))
-
-        var placements: [LoopPlacement] = []
-        var bar = 0
-        while bar < barCount {
-            let thisBlock = min(blockBars, barCount - bar)
-            let chosen = pb.loops.shuffled(using: &rng).prefix(count)
-            playedLoopBlocks.append(Array(chosen.map(\.name)))
-            let startSeconds = Double(bar) * barDuration
-            let durationSeconds = Double(thisBlock) * barDuration
-            for loop in chosen {
-                placements.append(LoopPlacement(buffer: loop.buffer, startSeconds: startSeconds, durationSeconds: durationSeconds))
+        beginRun()
+        var hits: [DrumHit] = []
+        var loops: [LoopPlacement] = []
+        var barStart = 0.0
+        for _ in 0..<barCount {
+            let plan = planNextBar()
+            for hit in plan.hits {
+                hits.append(DrumHit(code: hit.code, step: hit.step, time: barStart + hit.time))
             }
-            bar += thisBlock
+            for placement in plan.loopPlacements {
+                loops.append(LoopPlacement(buffer: placement.buffer,
+                                           startSeconds: barStart + placement.startSeconds,
+                                           durationSeconds: placement.durationSeconds))
+            }
+            barStart += plan.barDuration
         }
-        return placements
+        return try OfflineRenderer.render(hits: hits, source: source, loops: loops)
     }
 }
 

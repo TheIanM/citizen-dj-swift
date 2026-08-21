@@ -127,6 +127,29 @@ final class CitizenDJEngineTests: XCTestCase {
                        "same seed should yield the same pattern sequence across kits")
     }
 
+    /// schedule(bars:) must equal composing planNextBar() bar by bar — planNextBar is the
+    /// single source of truth shared with the live sequencer.
+    func testScheduleMatchesBarPlans() throws {
+        try XCTSkipUnless(PhraseBank.availableSetNames().contains("Bounce-loop"), "Bounce-loop not bundled")
+        var c = config(); c.phraseDirectory = "Bounce-loop"
+        let e1 = try CitizenDJEngine(rng: SeededRNG(seed: 21), config: c, startPatternIndex: 0)
+        let e2 = try CitizenDJEngine(rng: SeededRNG(seed: 21), config: c, startPatternIndex: 0)
+
+        let viaSchedule = e1.schedule(bars: 8)
+
+        e2.beginRun()
+        var composed: [DrumHit] = []
+        var barStart = 0.0
+        for _ in 0..<8 {
+            let plan = e2.planNextBar()
+            composed += plan.hits.map { DrumHit(code: $0.code, step: $0.step, time: barStart + $0.time) }
+            barStart += plan.barDuration
+        }
+        XCTAssertEqual(viaSchedule, composed)
+        XCTAssertEqual(e1.playedPatternIds, e2.playedPatternIds)
+        XCTAssertEqual(e1.playedLoopBlocks, e2.playedLoopBlocks)
+    }
+
     // MARK: helpers
 
     private func containsAudio(_ buf: AVAudioPCMBuffer) -> Bool {
