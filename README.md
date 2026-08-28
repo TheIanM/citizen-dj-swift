@@ -7,11 +7,67 @@ The Citizen DJ project invites the public to make hip hop music using the Librar
 [Preview Citizen DJ here](https://citizen-dj.labs.loc.gov/)
 
 > **About this fork:** alongside the original web app, this repo carries a native Swift
-> drum-loop generator (the `CitizenDJ` Swift package + `citizen-dj-demo` CLI) that produces
-> evolving, non-repetitive beats from your own drum kits and phrase loops. To add your own
-> samples, see **[docs/adding-samples.md](docs/adding-samples.md)**; for the commands to
-> trigger generations and experiments, see
+> drum-loop generator — see **[The Swift drum machine](#the-swift-drum-machine-fork-addition)**
+> below. To add your own samples, see **[docs/adding-samples.md](docs/adding-samples.md)**;
+> for copy-paste recipes and experiments, see
 > **[docs/generation-cookbook.md](docs/generation-cookbook.md)**.
+
+## The Swift drum machine (fork addition)
+
+A native Swift package (the `CitizenDJ` library) plus a demo CLI (`citizen-dj-demo`) that
+generates evolving, non-repetitive beats on-device from your own drum kits and phrase
+loops — no server, no pre-rendered loop files, every render is unique. The same engine can
+also play in real time through `AVAudioEngine` (`DrumSequencer` in the library), which is
+how an app (e.g. a game BGM) embeds it.
+
+### Quick start
+
+```bash
+# Bulk sample audio is gitignored — drop your kits under audio/drumkits/ and loop sets
+# under audio/phrases/ (see docs/adding-samples.md), then stage them into the package:
+./scripts/sync-resources.sh
+
+swift run citizen-dj-demo --list-kits
+swift run citizen-dj-demo --bars 16 --kit UFO --phrase-dir Bounce-loop --loops 2 --out /tmp/loop.wav
+open /tmp/loop.wav
+```
+
+### CLI flags
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--bars N` | 16 | Length in bars |
+| `--kit NAME` | first bundled kit | Drum-kit folder (under `audio/drumkits/`) |
+| `--phrase-dir NAME` | none — drums only | Phrase-set folder (under `audio/phrases/`) |
+| `--loops N` | 1 | How many loops from the set layer at once |
+| `--phrase-rotate N` | 4 | Re-pick loops every N bars |
+| `--bpm N` | see tempo rules below | Lock the tempo |
+| `--bpm-tolerance X` | 6 | Rotation picks patterns within ±X BPM of the current/locked tempo |
+| `--rotate N` | 4 | Rotate the drum pattern every N bars |
+| `--swing X` | 0.5 | Swing amount (roughly -0.5…0.5) |
+| `--no-humanize` | jitter on | Disable per-hit timing humanize (needed for exact cross-kit A/B) |
+| `--seed N` | random (printed each run) | Reproduce an exact render — the run's seed is always printed |
+| `--out PATH` | `./citizen-dj-loop.wav` | Output WAV |
+| `--live SECONDS` | — | Play in real time through `AVAudioEngine` instead of bouncing a file |
+| `--list-kits` / `--list-sets` | — | Print installed kits / phrase sets and exit |
+
+### How the tempo gets decided (in priority order)
+
+1. `--bpm`, if you pass it
+2. else the phrase set's filename BPM (e.g. `128BPM` in the loop names) when
+   `--phrase-dir` is given — the beat locks to the loops so they stay in sync
+3. else **drift**: each pattern carries its own BPM and rotation drifts within ±6 BPM per
+   pattern change
+
+### Live playback
+
+```bash
+swift run citizen-dj-demo --live 30 --kit UFO --phrase-dir Bounce-loop
+```
+
+Live and offline make identical generation choices from the same seed; recordings come
+from the offline bounce (`--out`). For everything else — recipes, reproducibility
+footguns, dev-loop commands — see **[docs/generation-cookbook.md](docs/generation-cookbook.md)**.
 
 ## Use cases
 

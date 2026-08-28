@@ -1,8 +1,7 @@
 # Generation cookbook — commands for quick testing & experiments
 
 Copy-paste commands for the `citizen-dj-demo` CLI. Run everything from the repository root
-(the folder containing `Package.swift`). Until `swift-engine` merges to `master`, that means
-your branch checkout / worktree.
+(the folder containing `Package.swift`).
 
 Optional alias to cut the typing:
 
